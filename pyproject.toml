@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "uniguide-local-rag"
+version = "0.1.0"
+description = "Offline, source-grounded university regulations assistant powered by Microsoft Foundry Local"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "Miray Sahin"}]
+dependencies = [
+  "pypdf>=5,<7",
+  "streamlit>=1.40,<2",
+]
+
+[project.optional-dependencies]
+windows = [
+  "foundry-local-sdk-winml",
+  "openai>=1.0,<3",
+]
+cross-platform = [
+  "foundry-local-sdk",
+  "openai>=1.0,<3",
+]
+
+[project.scripts]
+uniguide = "uniguide.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
