@@ -36,8 +36,10 @@ bulur, sonra yalnızca bu bağlamı kullanarak cevap üretir.
 4. Chunk, kaynak bilgisi ve embedding `storage/uniguide.db` dosyasına kaydedilir.
 5. Kullanıcı sorusu aynı embedding modeliyle vektöre çevrilir.
 6. Cosine similarity ile en yakın üç chunk seçilir.
-7. Seçilen bağlam ve soru `qwen2.5-0.5b` sohbet modeline gönderilir.
-8. Yanıt ve kullanılan kaynaklar kullanıcıya gösterilir.
+7. Seçilen bağlam ve soru Türkçe destekleyen `phi-4-mini` sohbet modeline gönderilir.
+8. Üretilen cevabın getirilen kaynakla örtüştüğü doğrulanır; örtüşmüyorsa doğrudan
+   ilgili kaynak cümlesi güvenli cevap olarak kullanılır.
+9. Yanıt ve kullanılan kaynaklar kullanıcıya gösterilir.
 
 ## Gereksinimler
 
@@ -174,6 +176,7 @@ UniGuide-Local-RAG/
 
 - Taranmış ve metin katmanı olmayan PDF'ler OCR olmadan okunamaz.
 - Küçük chat modellerinin Türkçe anlatım kalitesi daha büyük modellere göre sınırlıdır.
+- Varsayılan `phi-4-mini`, ilk kullanımda birkaç GB model indirmesi gerektirir.
 - Benzerlik eşiği tüm belge koleksiyonlarında yeniden değerlendirilmelidir.
 - Mevzuat güncellendiğinde PDF yeniden indirilmeli ve indeks yeniden oluşturulmalıdır.
 - Sistem hukuki veya resmî akademik karar vermez.

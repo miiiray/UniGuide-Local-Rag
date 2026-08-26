@@ -20,7 +20,7 @@ class Settings:
     embedding_model: str = os.getenv(
         "UNIGUIDE_EMBEDDING_MODEL", "qwen3-embedding-0.6b"
     )
-    chat_model: str = os.getenv("UNIGUIDE_CHAT_MODEL", "qwen2.5-0.5b")
+    chat_model: str = os.getenv("UNIGUIDE_CHAT_MODEL", "phi-4-mini")
     top_k: int = int(os.getenv("UNIGUIDE_TOP_K", "3"))
     min_similarity: float = float(os.getenv("UNIGUIDE_MIN_SIMILARITY", "0.35"))
     chunk_size: int = int(os.getenv("UNIGUIDE_CHUNK_SIZE", "1200"))

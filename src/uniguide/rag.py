@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import math
+import re
+import unicodedata
 from collections.abc import Callable, Sequence
 
 from uniguide.config import Settings
@@ -12,6 +14,135 @@ from uniguide.documents import (
     read_document,
 )
 from uniguide.models import IndexReport, RagAnswer, SearchResult
+
+
+_WORD_PATTERN = re.compile(r"[a-zA-Z0-9çğıöşüÇĞİÖŞÜ]+")
+_SENTENCE_PATTERN = re.compile(r"(?<=[.!?])\s+|\n+")
+_NUMBER_PATTERN = re.compile(r"\d+(?:[.,]\d+)?")
+_NUMBER_WORDS = {
+    "iki",
+    "uc",
+    "dort",
+    "bes",
+    "alti",
+    "yedi",
+    "sekiz",
+    "dokuz",
+    "on",
+    "birinci",
+    "ikinci",
+    "ucuncu",
+    "dorduncu",
+    "besinci",
+    "altinci",
+    "yedinci",
+    "sekizinci",
+    "dokuzuncu",
+    "onuncu",
+}
+_STOP_WORDS = {
+    "acaba",
+    "ama",
+    "ancak",
+    "bir",
+    "bu",
+    "da",
+    "de",
+    "daha",
+    "en",
+    "gibi",
+    "hangi",
+    "icin",
+    "ile",
+    "mi",
+    "mu",
+    "mı",
+    "mü",
+    "ne",
+    "neden",
+    "nasil",
+    "ve",
+    "veya",
+}
+
+
+def _normalize_word(word: str) -> str:
+    normalized = unicodedata.normalize("NFKD", word.casefold())
+    return "".join(
+        character
+        for character in normalized
+        if not unicodedata.combining(character)
+    )
+
+
+def _meaningful_words(text: str) -> set[str]:
+    words = {_normalize_word(word) for word in _WORD_PATTERN.findall(text)}
+    return {word for word in words if len(word) > 2 and word not in _STOP_WORDS}
+
+
+def _word_matches(left: str, right: str) -> bool:
+    if left == right:
+        return True
+    return len(left) >= 6 and len(right) >= 6 and left[:6] == right[:6]
+
+
+def _overlap_ratio(candidate: str, evidence: str) -> float:
+    candidate_words = _meaningful_words(candidate)
+    evidence_words = _meaningful_words(evidence)
+    if not candidate_words:
+        return 0.0
+    matched = sum(
+        any(_word_matches(word, evidence_word) for evidence_word in evidence_words)
+        for word in candidate_words
+    )
+    return matched / len(candidate_words)
+
+
+def _quantities(text: str) -> set[str]:
+    normalized_words = {_normalize_word(word) for word in _WORD_PATTERN.findall(text)}
+    return set(_NUMBER_PATTERN.findall(text)) | (normalized_words & _NUMBER_WORDS)
+
+
+def _is_grounded_answer(answer: str, evidence: str) -> bool:
+    answer = answer.strip()
+    if len(answer) < 20:
+        return False
+
+    # New numbers or ordinal words are a strong hallucination signal in regulations.
+    if not _quantities(answer).issubset(_quantities(evidence)):
+        return False
+
+    # A grounded answer should reuse the important facts and terms in the retrieved
+    # text. This rejects fluent-looking but unrelated small-model output.
+    return _overlap_ratio(answer, evidence) >= 0.45
+
+
+def _extractive_fallback(question: str, result: SearchResult) -> str:
+    question_words = _meaningful_words(question)
+    candidates = [
+        sentence.strip(" -#\t")
+        for sentence in _SENTENCE_PATTERN.split(result.content)
+        if len(sentence.strip(" -#\t")) >= 20
+    ]
+    if not candidates:
+        candidates = [result.content.strip()]
+
+    def sentence_score(sentence: str) -> tuple[float, int]:
+        sentence_words = _meaningful_words(sentence)
+        if not question_words:
+            return (0.0, -len(sentence))
+        matched = sum(
+            any(_word_matches(word, sentence_word) for sentence_word in sentence_words)
+            for word in question_words
+        )
+        return (matched / len(question_words), -len(sentence))
+
+    best_sentence = max(candidates, key=sentence_score)
+    return (
+        "Kaynak metinde şu bilgi yer alıyor:\n\n"
+        f"{best_sentence}\n\n"
+        f"Kaynaklar:\n- {result.citation}"
+    )
 
 
 def cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
@@ -118,8 +249,18 @@ class RagService:
                 grounded=False,
             )
 
+        # Keep chunks close to the best result. Weak, unrelated chunks distract
+        # small local models and can introduce facts from a different regulation.
+        context_floor = max(
+            self.settings.min_similarity,
+            results[0].score - 0.12,
+        )
+        context_results = [
+            result for result in results if result.score >= context_floor
+        ]
+
         context_sections = []
-        for index, result in enumerate(results, start=1):
+        for index, result in enumerate(context_results, start=1):
             context_sections.append(
                 f"[KAYNAK {index}: {result.citation}; chunk {result.chunk_index}; "
                 f"benzerlik {result.score:.3f}]\n{result.content}"
@@ -130,22 +271,35 @@ class RagService:
             {
                 "role": "system",
                 "content": (
-                    "Sen UniGuide adlı üniversite mevzuat asistanısın. Yanıtını yalnızca "
-                    "aşağıdaki BAĞLAM içindeki bilgilere dayandır. Bağlam yeterli değilse "
-                    "açıkça 'Bu bilgi sağlanan belgelerde bulunmuyor' de. Tahmin etme ve "
-                    "genel bilgini kullanma. Kısa, açık ve Türkçe yanıt ver. İlgili madde "
-                    "veya koşul bağlamda bulunuyorsa belirt. Yanıtın sonunda kullandığın "
-                    "kaynakları 'Kaynaklar:' başlığı altında listele. Bu sistem resmî "
-                    "akademik danışmanlık yerine geçmez.\n\n"
-                    f"BAĞLAM:\n{context}"
+                    "Sen UniGuide adlı üniversite mevzuat asistanısın. Yalnızca "
+                    "kullanıcının verdiği kaynak metne dayan. Kaynakta olmayan bilgi, "
+                    "sayı veya koşul ekleme. Türkçe ve en fazla üç cümleyle cevap ver."
                 ),
             },
-            {"role": "user", "content": question.strip()},
+            {
+                "role": "user",
+                "content": (
+                    f"KAYNAK METİN:\n{context}\n\n"
+                    f"SORU:\n{question.strip()}\n\n"
+                    "Sayıları ve yarıyıl bilgilerini kaynakta yazıldığı biçimde koru. "
+                    "Sadece cevabı yaz; kaynak listesini uygulama ayrıca ekleyecek."
+                ),
+            },
         ]
         answer = self.runtime.complete(messages)
+
+        evidence = "\n".join(result.content for result in context_results)
+        if not _is_grounded_answer(answer, evidence):
+            answer = _extractive_fallback(question, context_results[0])
+        else:
+            citations = "\n".join(
+                f"- {result.citation}" for result in context_results
+            )
+            answer = f"{answer}\n\nKaynaklar:\n{citations}"
+
         return RagAnswer(
             question=question,
             answer=answer,
-            sources=results,
+            sources=context_results,
             grounded=True,
         )

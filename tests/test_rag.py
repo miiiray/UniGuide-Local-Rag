@@ -15,9 +15,22 @@ class FakeRuntime:
         return [self.embed_one(text) for text in texts]
 
     def complete(self, messages: list[dict[str, str]]) -> str:
-        if "BAĞLAM" not in messages[0]["content"]:
-            raise AssertionError("Prompt içinde BAĞLAM bulunamadı")
-        return "Yandal için gereken ortalama 65'tir. Kaynaklar: yandal.md"
+        if "KAYNAK METİN" not in messages[1]["content"]:
+            raise AssertionError("Prompt içinde KAYNAK METİN bulunamadı")
+        return "Yandal için gereken ortalama 65'tir."
+
+
+class HallucinatingRuntime(FakeRuntime):
+    def complete(self, messages: list[dict[str, str]]) -> str:
+        return "En az dört dil öğrenme sürecinden birkaç ay sonra kabul edilir."
+
+
+class WrongOrdinalRuntime(FakeRuntime):
+    def complete(self, messages: list[dict[str, str]]) -> str:
+        return (
+            "Yandal programına en erken dördüncü, en geç altıncı yarıyılın "
+            "başında başvurulabilir."
+        )
 
 
 def settings_for(root: Path, threshold: float = 0.35) -> Settings:
@@ -68,7 +81,60 @@ class RagTests(unittest.TestCase):
             result = service.ask("Yandal koşulu nedir?")
             self.assertTrue(result.grounded)
             self.assertIn("65", result.answer)
+            self.assertIn("Kaynaklar:", result.answer)
             self.assertEqual(result.sources[0].source_name, "yandal.md")
+
+    def test_hallucinated_answer_falls_back_to_source_sentence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            service = RagService(settings_for(root), HallucinatingRuntime())
+            chunk = TextChunk(
+                root / "yandal.md",
+                "yandal.md",
+                0,
+                None,
+                (
+                    "Yandal programına anadal lisans programının en erken üçüncü, "
+                    "en geç altıncı yarıyılının başında başvurulabilir."
+                ),
+            )
+            service.database.replace_document(
+                "yandal.md", "yandal.md", "h1", [chunk], [[1.0, 0.0]]
+            )
+
+            result = service.ask(
+                "Yandal programına en erken ve en geç hangi yarıyılda başvurabilirim?"
+            )
+
+            self.assertIn("en erken üçüncü", result.answer)
+            self.assertIn("en geç altıncı", result.answer)
+            self.assertNotIn("dört dil", result.answer)
+            self.assertIn("yandal.md", result.answer)
+
+    def test_wrong_ordinal_falls_back_to_source_sentence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            service = RagService(settings_for(root), WrongOrdinalRuntime())
+            chunk = TextChunk(
+                root / "yandal.md",
+                "yandal.md",
+                0,
+                None,
+                (
+                    "Yandal programına anadal lisans programının en erken üçüncü, "
+                    "en geç altıncı yarıyılının başında başvurulabilir."
+                ),
+            )
+            service.database.replace_document(
+                "yandal.md", "yandal.md", "h1", [chunk], [[1.0, 0.0]]
+            )
+
+            result = service.ask(
+                "Yandal programına en erken ve en geç hangi yarıyılda başvurabilirim?"
+            )
+
+            self.assertIn("en erken üçüncü", result.answer)
+            self.assertNotIn("en erken dördüncü", result.answer)
 
     def test_low_similarity_uses_safe_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
