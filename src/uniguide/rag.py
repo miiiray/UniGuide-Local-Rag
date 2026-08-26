@@ -80,6 +80,10 @@ def _meaningful_words(text: str) -> set[str]:
     return {word for word in words if len(word) > 2 and word not in _STOP_WORDS}
 
 
+def _normalized_text(text: str) -> str:
+    return " ".join(_normalize_word(word) for word in _WORD_PATTERN.findall(text))
+
+
 def _word_matches(left: str, right: str) -> bool:
     if left == right:
         return True
@@ -103,10 +107,19 @@ def _quantities(text: str) -> set[str]:
     return set(_NUMBER_PATTERN.findall(text)) | (normalized_words & _NUMBER_WORDS)
 
 
-def _is_grounded_answer(answer: str, evidence: str) -> bool:
+def _is_grounded_answer(answer: str, evidence: str, question: str) -> bool:
     answer = answer.strip()
     if len(answer) < 20:
         return False
+
+    normalized_question = _normalized_text(question)
+    normalized_answer = _normalized_text(answer)
+    for required_phrase in ("en erken", "en gec"):
+        if (
+            required_phrase in normalized_question
+            and required_phrase not in normalized_answer
+        ):
+            return False
 
     # New numbers or ordinal words are a strong hallucination signal in regulations.
     if not _quantities(answer).issubset(_quantities(evidence)):
@@ -289,7 +302,7 @@ class RagService:
         answer = self.runtime.complete(messages)
 
         evidence = "\n".join(result.content for result in context_results)
-        if not _is_grounded_answer(answer, evidence):
+        if not _is_grounded_answer(answer, evidence, question):
             answer = _extractive_fallback(question, context_results[0])
         else:
             citations = "\n".join(

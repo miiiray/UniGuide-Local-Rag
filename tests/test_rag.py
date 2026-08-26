@@ -42,6 +42,14 @@ class CapturingRuntime(FakeRuntime):
         return "Yandal programına üçüncü yarıyılın başında başvurulabilir."
 
 
+class MissingLatestRuntime(FakeRuntime):
+    def complete(self, messages: list[dict[str, str]]) -> str:
+        return (
+            "Yandal programına en erken üçüncü veya altıncı yarıyılın başında, "
+            "yani en erken altıncı yarıyılın başında başvurabilirsiniz."
+        )
+
+
 def settings_for(root: Path, threshold: float = 0.35) -> Settings:
     return Settings(
         data_dir=root / "data",
@@ -178,6 +186,32 @@ class RagTests(unittest.TestCase):
                 ["01_egitim_ogretim.md"],
             )
             self.assertNotIn("03_staj.md", runtime.messages[1]["content"])
+
+    def test_missing_latest_constraint_uses_extractive_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            service = RagService(settings_for(root), MissingLatestRuntime())
+            chunk = TextChunk(
+                root / "yandal.md",
+                "yandal.md",
+                0,
+                None,
+                (
+                    "Yandal programına anadal lisans programının en erken üçüncü, "
+                    "en geç altıncı yarıyılının başında başvurulabilir."
+                ),
+            )
+            service.database.replace_document(
+                "yandal.md", "yandal.md", "h1", [chunk], [[1.0, 0.0]]
+            )
+
+            result = service.ask(
+                "Yandal programına en erken ve en geç hangi yarıyılda başvurabilirim?"
+            )
+
+            self.assertIn("en erken üçüncü", result.answer)
+            self.assertIn("en geç altıncı", result.answer)
+            self.assertNotIn("en erken altıncı", result.answer)
 
     def test_low_similarity_uses_safe_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
