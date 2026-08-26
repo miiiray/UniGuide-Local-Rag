@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from uniguide.config import Settings
-from uniguide.models import TextChunk
+from uniguide.models import SearchResult, TextChunk
 from uniguide.rag import RagService, cosine_similarity
 
 
@@ -31,6 +31,15 @@ class WrongOrdinalRuntime(FakeRuntime):
             "Yandal programına en erken dördüncü, en geç altıncı yarıyılın "
             "başında başvurulabilir."
         )
+
+
+class CapturingRuntime(FakeRuntime):
+    def __init__(self) -> None:
+        self.messages: list[dict[str, str]] = []
+
+    def complete(self, messages: list[dict[str, str]]) -> str:
+        self.messages = messages
+        return "Yandal programına üçüncü yarıyılın başında başvurulabilir."
 
 
 def settings_for(root: Path, threshold: float = 0.35) -> Settings:
@@ -135,6 +144,40 @@ class RagTests(unittest.TestCase):
 
             self.assertIn("en erken üçüncü", result.answer)
             self.assertNotIn("en erken dördüncü", result.answer)
+
+    def test_context_excludes_noticeably_weaker_unrelated_result(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = CapturingRuntime()
+            service = RagService(settings_for(root), runtime)
+            service.search = lambda question: [
+                SearchResult(
+                    1,
+                    "01_egitim_ogretim.md",
+                    "demo/01_egitim_ogretim.md",
+                    1,
+                    None,
+                    "Yandal programına üçüncü yarıyılın başında başvurulabilir.",
+                    0.469,
+                ),
+                SearchResult(
+                    2,
+                    "03_staj.md",
+                    "demo/03_staj.md",
+                    0,
+                    None,
+                    "Bilgisayar Mühendisliği stajı 60 iş günüdür.",
+                    0.368,
+                ),
+            ]
+
+            result = service.ask("Yandal programına ne zaman başvurabilirim?")
+
+            self.assertEqual(
+                [source.source_name for source in result.sources],
+                ["01_egitim_ogretim.md"],
+            )
+            self.assertNotIn("03_staj.md", runtime.messages[1]["content"])
 
     def test_low_similarity_uses_safe_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

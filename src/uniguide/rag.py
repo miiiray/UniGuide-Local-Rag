@@ -253,7 +253,7 @@ class RagService:
         # small local models and can introduce facts from a different regulation.
         context_floor = max(
             self.settings.min_similarity,
-            results[0].score - 0.12,
+            results[0].score - 0.08,
         )
         context_results = [
             result for result in results if result.score >= context_floor
