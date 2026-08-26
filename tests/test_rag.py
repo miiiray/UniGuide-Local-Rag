@@ -50,6 +50,11 @@ class MissingLatestRuntime(FakeRuntime):
         )
 
 
+class FailingChatRuntime(FakeRuntime):
+    def complete(self, messages: list[dict[str, str]]) -> str:
+        raise RuntimeError("Operation was canceled")
+
+
 def settings_for(root: Path, threshold: float = 0.35) -> Settings:
     return Settings(
         data_dir=root / "data",
@@ -221,6 +226,29 @@ class RagTests(unittest.TestCase):
             result = service.ask("Yandal koşulu nedir?")
             self.assertFalse(result.grounded)
             self.assertIn("bulunamadı", result.answer)
+
+    def test_fast_mode_skips_chat_generation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            service = RagService(settings_for(root), FailingChatRuntime())
+            seed(service, root)
+
+            result = service.ask("Yandal koşulu nedir?", use_chat_model=False)
+
+            self.assertTrue(result.grounded)
+            self.assertIn("Yandal ortalaması 65", result.answer)
+
+    def test_chat_failure_falls_back_to_source_sentence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            service = RagService(settings_for(root), FailingChatRuntime())
+            seed(service, root)
+
+            result = service.ask("Yandal koşulu nedir?")
+
+            self.assertTrue(result.grounded)
+            self.assertIn("Yandal ortalaması 65", result.answer)
+            self.assertNotIn("Operation was canceled", result.answer)
 
     def test_index_documents_then_skip_unchanged_files(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

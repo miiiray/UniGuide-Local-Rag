@@ -249,7 +249,7 @@ class RagService:
         results.sort(key=lambda item: item.score, reverse=True)
         return results[: top_k or self.settings.top_k]
 
-    def ask(self, question: str) -> RagAnswer:
+    def ask(self, question: str, use_chat_model: bool = True) -> RagAnswer:
         results = self.search(question)
         if not results or results[0].score < self.settings.min_similarity:
             return RagAnswer(
@@ -280,6 +280,14 @@ class RagService:
             )
         context = "\n\n".join(context_sections)
 
+        if not use_chat_model:
+            return RagAnswer(
+                question=question,
+                answer=_extractive_fallback(question, context_results[0]),
+                sources=context_results,
+                grounded=True,
+            )
+
         messages = [
             {
                 "role": "system",
@@ -299,7 +307,19 @@ class RagService:
                 ),
             },
         ]
-        answer = self.runtime.complete(messages)
+        try:
+            answer = self.runtime.complete(messages)
+        except Exception:
+            # Retrieval is still useful when the local generation runtime is
+            # temporarily unavailable. Return the best source sentence instead of
+            # exposing an SDK cancellation error to the user.
+            answer = _extractive_fallback(question, context_results[0])
+            return RagAnswer(
+                question=question,
+                answer=answer,
+                sources=context_results,
+                grounded=True,
+            )
 
         evidence = "\n".join(result.content for result in context_results)
         if not _is_grounded_answer(answer, evidence, question):

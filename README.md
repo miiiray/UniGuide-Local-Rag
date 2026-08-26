@@ -26,6 +26,7 @@ bulur, sonra yalnızca bu bağlamı kullanarak cevap üretir.
 - Belge değişmediyse tekrar embedding üretmeme
 - Belgede bilgi yoksa güvenli geri dönüş cevabı
 - Geçici Foundry Local sohbet iptallerinde otomatik yeniden deneme
+- Varsayılan hızlı kaynak-cevap modu ve üretken model için güvenli geri dönüş
 - Terminal arayüzü ve Streamlit web arayüzü
 - Bulut hesabı veya API anahtarı gerektirmeyen yerel model çıkarımı
 

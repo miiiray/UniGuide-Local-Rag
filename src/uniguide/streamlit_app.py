@@ -62,6 +62,19 @@ with st.sidebar:
             st.error(str(exc))
 
     st.divider()
+    fast_mode = st.toggle(
+        "Hızlı ve güvenli yanıt",
+        value=True,
+        help=(
+            "En ilgili resmî kaynak cümlesini doğrudan gösterir. Kapatılırsa "
+            "phi-4-mini doğal dilde yanıt üretir ve daha uzun sürebilir."
+        ),
+    )
+    st.caption(
+        "Hızlı mod açıkken sohbet modeli yüklenmez; cevap yine anlamsal arama "
+        "ve resmî kaynak metninden üretilir."
+    )
+    st.divider()
     st.markdown(
         "**Modeller**\n\n"
         f"Embedding: `{service.settings.embedding_model}`\n\n"
@@ -89,7 +102,7 @@ if question:
     with st.chat_message("assistant"):
         try:
             with st.spinner("Yerel belgelerde aranıyor..."):
-                result = service.ask(question)
+                result = service.ask(question, use_chat_model=not fast_mode)
             st.markdown(result.answer)
             serialized_sources = []
             for source in result.sources:
