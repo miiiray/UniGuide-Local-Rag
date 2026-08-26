@@ -79,6 +79,9 @@ Demo belgeleri `data/demo/` klasöründedir. Güncel resmî PDF'leri
 - `.md`
 - `.txt`
 
+`data/official/` içinde belge varsa demo özetleri otomatik olarak arama dışında
+bırakılır; böylece resmî metinlerle demo metinleri birbirine karışmaz.
+
 Kullanılan resmî bağlantılar için [docs/SOURCE_CATALOG.md](docs/SOURCE_CATALOG.md)
 dosyasına bakın. PDF dosyaları güncellenebildiği için depoya sabitlenmemiştir.
 

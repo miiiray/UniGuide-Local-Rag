@@ -12,7 +12,7 @@ SUPPORTED_SUFFIXES = {".pdf", ".txt", ".md"}
 
 
 def discover_documents(data_dir: Path) -> list[Path]:
-    return sorted(
+    documents = sorted(
         path
         for path in data_dir.rglob("*")
         if path.is_file()
@@ -20,6 +20,11 @@ def discover_documents(data_dir: Path) -> list[Path]:
         and not path.name.startswith(".")
         and path.name.upper() not in {"README.MD", "SOURCES.MD"}
     )
+    official_dir = data_dir / "official"
+    official_documents = [
+        path for path in documents if official_dir in path.parents
+    ]
+    return official_documents or documents
 
 
 def file_sha256(path: Path) -> str:

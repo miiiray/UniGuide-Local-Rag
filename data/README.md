@@ -6,3 +6,6 @@
 
 Demo metinleri mevzuatın tamamı değildir. Akademik karar vermek için kullanılamaz.
 Güncel PDF bağlantıları `docs/SOURCE_CATALOG.md` dosyasındadır.
+
+`official/` klasöründe en az bir desteklenen belge bulunduğunda uygulama demo özetlerini
+otomatik olarak dışarıda bırakır ve yalnızca resmî belgeleri indeksler.
