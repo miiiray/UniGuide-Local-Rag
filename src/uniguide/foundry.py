@@ -5,6 +5,7 @@ from typing import Any
 
 
 ProgressCallback = Callable[[str], None]
+_RETRYABLE_CHAT_ERROR = "operation was cancel"
 
 
 class FoundryLocalRuntime:
@@ -102,9 +103,25 @@ class FoundryLocalRuntime:
         return list(response.data[0].embedding)
 
     def complete(self, messages: list[dict[str, str]]) -> str:
-        self._start_chat()
-        response = self._chat_client.complete_chat(messages)
-        return (response.choices[0].message.content or "").strip()
+        for attempt in range(2):
+            self._start_chat()
+            try:
+                response = self._chat_client.complete_chat(messages)
+                return (response.choices[0].message.content or "").strip()
+            except Exception as exc:
+                is_transient_cancellation = (
+                    _RETRYABLE_CHAT_ERROR in str(exc).casefold()
+                )
+                if attempt == 1 or not is_transient_cancellation:
+                    raise
+
+                self.progress(
+                    "Sohbet isteği iptal edildi; model yenilenip otomatik "
+                    "olarak tekrar deneniyor..."
+                )
+                self._unload_chat()
+
+        raise RuntimeError("Sohbet modeli yanıt üretemedi.")
 
     def close(self) -> None:
         self._unload_chat()
